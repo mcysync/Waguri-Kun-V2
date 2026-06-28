@@ -3,7 +3,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from pyrogram import Client, idle
+from pyrogram import Client
 
 from config import Config
 
@@ -29,13 +29,12 @@ class WaguriBot(Client):
             api_hash=Config.API_HASH,
             bot_token=Config.BOT_TOKEN,
             plugins=dict(root="modules"),
-            workdir="data/temp",
-            in_memory=False
+            # 🔥 CRITICAL TERMUX FIX: Bypasses Android SQLite locks
+            in_memory=True 
         )
 
     async def start(self):
-        logger.info("Initializing WaguriBot in Termux/Mobile Mode...")
-        
+        logger.info("Initializing WaguriBot in Mobile RAM Mode...")
         from modules.database import db
         await db.connect()
         await db.create_tables()
