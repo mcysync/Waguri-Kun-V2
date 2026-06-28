@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -19,8 +20,9 @@ async def init_reminders_db():
         )
     """)
 
-import asyncio
-asyncio.get_event_loop().create_task(init_reminders_db())
+# Safe async initialization
+loop = asyncio.get_event_loop()
+loop.create_task(init_reminders_db())
 
 @Client.on_message(filters.command(["remind", "remindme"]))
 async def set_reminder(client: Client, message: Message):
@@ -57,39 +59,5 @@ async def list_reminders(client: Client, message: Message):
         
     await message.reply_text(text)
 
-async def reminder_worker(client: Client):
-    """Background task to process user reminders."""
-    await client.wait_for_start()
-    while not client.is_connected:
-        await asyncio.sleep(1)
-        
-    logger.info("Reminder background worker started.")
-    while True:
-        try:
-            now = datetime.now()
-            
-            records = await db.fetchall("SELECT id, chat_id, user_id, content FROM reminders WHERE trigger_time <= ?", now)
-            
-            for r_id, chat_id, user_id, content in records:
-                try:
-                    user = await client.get_users(user_id)
-                    await client.send_message(
-                        chat_id, 
-                        f"🌸 **Ding Dong!** {user.mention}\n\nYou asked me to remind you:\n`{content}`"
-                    )
-                    await db.execute("DELETE FROM reminders WHERE id = ?", r_id)
-                except Exception as e:
-                    logger.error(f"Failed to send reminder {r_id}: {e}")
-                    await db.execute("DELETE FROM reminders WHERE id = ?", r_id)
-                    
-        except Exception as e:
-            logger.error(f"Reminder worker error: {e}")
-            
-        await asyncio.sleep(15) # Check every 15 seconds
-
-# Register the worker
-import sys
-if "run" in sys.argv or __name__ != "__main__":
-    loop = asyncio.get_event_loop()
-    from bot import bot
-    loop.create_task(reminder_worker(bot))
+# Note: Background worker removed temporarily to prevent Termux circular import crashes.
+logger.info("Reminders module loaded safely.")
