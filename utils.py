@@ -96,10 +96,11 @@ def bot_admin_required(permissions: Optional[str] = None):
     return decorator
 
 async def extract_target(client: Client, message: Message):
-    """Safely extracts target without triggering network lookups."""
+    """STRICT RESOLUTION: Forces Telegram to give us a real Integer ID, preventing the AttributeError crash."""
     args = message.text.split() if message.text else []
     reason = None
     
+    # 1. Reply Method
     if message.reply_to_message:
         reason = " ".join(args[1:]) if len(args) > 1 else None
         if message.reply_to_message.from_user:
@@ -107,12 +108,18 @@ async def extract_target(client: Client, message: Message):
         elif message.reply_to_message.sender_chat:
             return message.reply_to_message.sender_chat.id, f"**{message.reply_to_message.sender_chat.title}**", reason
 
+    # 2. Text Method (@username or ID)
     if len(args) > 1:
         raw = args[1]
         reason = " ".join(args[2:]) if len(args) > 2 else None
-        if raw.lstrip("-").isdigit():
-            return int(raw), f"`{raw}`", reason
-        else:
-            return raw, raw, reason
+        
+        try:
+            # Force Telegram API to look them up so we don't pass a broken string
+            user = await client.get_users(raw)
+            return user.id, user.mention, reason
+        except Exception:
+            # If get_users fails, but it's a number, pass the number.
+            if raw.lstrip("-").isdigit():
+                return int(raw), f"`{raw}`", reason
             
     return None, None, None
