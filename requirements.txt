@@ -1,4 +1,4 @@
-# Core Bot & API (Cross-Platform / Termux Safe)
+# Core Bot
 pyrogram>=2.0.106
 TgCrypto>=1.2.5
 python-dotenv>=1.0.0
@@ -9,15 +9,10 @@ aiosqlite>=0.19.0
 # Scheduling & Utilities
 APScheduler>=3.10.4
 cachetools>=5.3.1
-psutil>=5.9.6
 regex>=2023.10.3
 
-# API & Web
+# Networking & Media
 aiohttp>=3.8.5
-FastAPI>=0.104.0
-uvicorn>=0.23.2
 httpx>=0.25.0
-
-# Media & Fun
 Pillow>=10.1.0
 emoji>=2.8.0
