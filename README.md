@@ -148,6 +148,7 @@ WaguriBot/
 **Administration:** `/settings`, `/setwelcome`, `/filter`, `/notes`, `/backup`, `/stats`  
 
 *Use `/help` inside the bot to see the full, dynamically generated list of features.*
+run pythonfix.py before running the bot to avoid crashes
 
 ---
 
