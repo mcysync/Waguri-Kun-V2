@@ -5,7 +5,14 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import uvloop
+# --- CROSS PLATFORM COMPATIBILITY ---
+# Linux servers will use uvloop for speed. Termux will use standard asyncio to prevent crashes.
+try:
+    import uvloop
+    HAS_UVLOOP = True
+except ImportError:
+    HAS_UVLOOP = False
+
 from pyrogram import Client, idle
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.events import EVENT_JOB_ERROR
@@ -55,14 +62,18 @@ class WaguriBot(Client):
         )
         self.scheduler = AsyncIOScheduler()
         self.start_time = datetime.now()
-        self.version = "1.0.0-Enterprise"
+        self.version = "1.0.0-CrossPlatform"
         
     async def start(self):
         """Starts the Pyrogram client, scheduler, and database connection."""
         logger.info("Initializing WaguriBot...")
         
-        # Initialize Database connection (will be loaded by modules/database.py)
-        # We ensure it's ready before modules do DB calls
+        if not HAS_UVLOOP:
+            logger.info("Running in Mobile/Termux Mode (Standard Asyncio)")
+        else:
+            logger.info("Running in Enterprise Server Mode (uvloop)")
+        
+        # Initialize Database connection
         from modules.database import db
         await db.connect()
         await db.create_tables()
@@ -97,7 +108,10 @@ class WaguriBot(Client):
         self.scheduler.start()
 
 if __name__ == "__main__":
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    # Dynamically apply event loop policy
+    if HAS_UVLOOP:
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        
     bot = WaguriBot()
     
     try:
