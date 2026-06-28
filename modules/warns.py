@@ -26,9 +26,17 @@ async def warn_user(client: Client, message: Message):
         
     user_mention = str(user_id)
     try:
-        user = await client.get_users(user_id)
-        user_id = user.id
-        user_mention = user.mention
+        if isinstance(user_id, str) and not user_id.isdigit():
+            user = await client.get_users(user_id)
+            user_id = user.id
+            user_mention = user.mention
+        else:
+            user_id = int(user_id)
+            try:
+                user = await client.get_users(user_id)
+                user_mention = user.mention
+            except Exception:
+                pass
     except Exception:
         pass
         
@@ -64,13 +72,13 @@ async def warn_user(client: Client, message: Message):
                 await message.reply_text(f"🌸 **Warning!** ⚠️\n**Target:** {user_mention}\n**Warns:** `{warn_count}/{max_warns}`\n**Reason:** `{reason_text}`")
                 
     except Exception as e:
-        logger.error(f"Warn error: {e}")
         await message.reply_text(f"🌸 An error occurred applying the warning: `{e}`")
 
 @Client.on_message(filters.command("warnings") & filters.group)
 async def check_warnings(client: Client, message: Message):
     user_id, _ = extract_user(message)
     target = user_id if user_id else (message.from_user.id if message.from_user else 0)
+    target = int(target) if str(target).isdigit() or str(target).startswith("-") else target
     
     try:
         warns = await db.fetchall(
@@ -97,6 +105,7 @@ async def clear_warnings(client: Client, message: Message):
         return await message.reply_text("🌸 Please reply to a user to clear their warnings.")
         
     try:
+        user_id = int(user_id) if str(user_id).isdigit() or str(user_id).startswith("-") else user_id
         await db.execute("DELETE FROM warns WHERE chat_id = ? AND user_id = ?", message.chat.id, user_id)
         await message.reply_text(f"🌸 Poof! 🪄 All warnings for `{user_id}` have been cleared.")
     except Exception as e:
