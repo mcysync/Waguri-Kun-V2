@@ -50,7 +50,7 @@ def admin_required(permissions: Optional[str] = None):
                 return await func(client, message, *args, **kwargs)
                 
             if not message.from_user:
-                return await message.reply_text("🌸 I couldn't identify your user profile.")
+                return await message.reply_text("🌸 I couldn't identify your profile.")
                 
             user_id = message.from_user.id
             if Config.is_sudo(user_id): 
@@ -80,7 +80,7 @@ def bot_admin_required(permissions: Optional[str] = None):
                 return await func(client, message, *args, **kwargs)
                 
             try:
-                bot_member = await client.get_chat_member(message.chat.id, client.me.id)
+                bot_member = await client.get_chat_member(message.chat.id, "me")
             except Exception:
                 return await message.reply_text("🌸 Please make me an admin first!")
             
@@ -95,42 +95,24 @@ def bot_admin_required(permissions: Optional[str] = None):
         return wrapper
     return decorator
 
-# THE BULLETPROOF TARGET EXTRACTOR
 async def extract_target(client: Client, message: Message):
-    """Returns (target_id, target_mention, reason) WITHOUT failing on network calls."""
+    """Safely extracts target without triggering network lookups."""
     args = message.text.split() if message.text else []
     reason = None
     
-    # 1. IF YOU REPLIED TO A MESSAGE (Zero API calls, instant execution)
     if message.reply_to_message:
         reason = " ".join(args[1:]) if len(args) > 1 else None
         if message.reply_to_message.from_user:
-            u = message.reply_to_message.from_user
-            return u.id, u.mention, reason
+            return message.reply_to_message.from_user.id, message.reply_to_message.from_user.mention, reason
         elif message.reply_to_message.sender_chat:
-            c = message.reply_to_message.sender_chat
-            return c.id, f"**{c.title}**", reason
+            return message.reply_to_message.sender_chat.id, f"**{message.reply_to_message.sender_chat.title}**", reason
 
-    # 2. IF YOU PROVIDED AN ID OR USERNAME IN TEXT
     if len(args) > 1:
-        raw_target = args[1]
+        raw = args[1]
         reason = " ".join(args[2:]) if len(args) > 2 else None
-        
-        # If it's a numeric ID
-        if raw_target.lstrip("-").isdigit():
-            target_id = int(raw_target)
-            try:
-                user = await client.get_users(target_id)
-                return user.id, user.mention, reason
-            except Exception:
-                return target_id, f"`{target_id}`", reason # Fallback to raw ID immediately
-        
-        # If it's a username (@name)
+        if raw.lstrip("-").isdigit():
+            return int(raw), f"`{raw}`", reason
         else:
-            try:
-                user = await client.get_users(raw_target)
-                return user.id, user.mention, reason
-            except Exception:
-                pass
-                
+            return raw, raw, reason
+            
     return None, None, None
