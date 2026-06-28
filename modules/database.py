@@ -68,8 +68,12 @@ class Database:
             "CREATE TABLE IF NOT EXISTS security_settings (chat_id INTEGER PRIMARY KEY, file_scan BOOLEAN DEFAULT 1, scam_detect BOOLEAN DEFAULT 1);",
             "CREATE TABLE IF NOT EXISTS verified_users (user_id INTEGER PRIMARY KEY, admin_id INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
             "CREATE TABLE IF NOT EXISTS scheduled_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, user_id INTEGER, content TEXT, trigger_time TIMESTAMP);",
-            "CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, user_id INTEGER, content TEXT, trigger_time TIMESTAMP);"
+            "CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, user_id INTEGER, content TEXT, trigger_time TIMESTAMP);",
+            
+            # 🔥 THE NEW BAN STORAGE SHIELD 🔥
+            "CREATE TABLE IF NOT EXISTS banned_users (chat_id INTEGER, user_id INTEGER, admin_id INTEGER, reason TEXT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (chat_id, user_id));"
         ]
         for s in schemas: await self.execute(s)
+        logger.info("Database schemas loaded, including Ban Shield.")
 
 db = Database(Config.DATABASE_PATH)
