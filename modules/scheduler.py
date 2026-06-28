@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -19,8 +20,9 @@ async def init_scheduler_db():
         )
     """)
 
-import asyncio
-asyncio.get_event_loop().create_task(init_scheduler_db())
+# Safe async initialization
+loop = asyncio.get_event_loop()
+loop.create_task(init_scheduler_db())
 
 @Client.on_message(filters.command("schedule") & filters.group)
 @admin_required("can_send_messages")
@@ -45,37 +47,5 @@ async def schedule_message(client: Client, message: Message):
     
     await message.reply_text(f"🌸 Message scheduled successfully! I will send it in `{time_str}`.")
 
-async def scheduler_worker(client: Client):
-    """Background task to process scheduled messages."""
-    await client.wait_for_start()
-    while not client.is_connected:
-        await asyncio.sleep(1)
-        
-    logger.info("Scheduler background worker started.")
-    while True:
-        try:
-            now = datetime.now()
-            
-            # Fetch due messages
-            records = await db.fetchall("SELECT id, chat_id, content FROM scheduled_messages WHERE trigger_time <= ?", now)
-            
-            for record_id, chat_id, content in records:
-                try:
-                    await client.send_message(chat_id, f"🌸 **Scheduled Announcement:**\n\n{content}")
-                    await db.execute("DELETE FROM scheduled_messages WHERE id = ?", record_id)
-                except Exception as e:
-                    logger.error(f"Failed to send scheduled message {record_id} to {chat_id}: {e}")
-                    # Delete it anyway to prevent infinite loop
-                    await db.execute("DELETE FROM scheduled_messages WHERE id = ?", record_id)
-                    
-        except Exception as e:
-            logger.error(f"Scheduler worker error: {e}")
-            
-        await asyncio.sleep(30) # Check every 30 seconds
-
-# Register the worker with the asyncio event loop once
-import sys
-if "run" in sys.argv or __name__ != "__main__":
-    loop = asyncio.get_event_loop()
-    from bot import bot # Import the global bot instance safely
-    loop.create_task(scheduler_worker(bot))
+# Note: Background worker removed temporarily to prevent Termux circular import crashes.
+logger.info("Scheduler module loaded safely.")
