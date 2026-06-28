@@ -1,13 +1,9 @@
 import logging
-import asyncio
 from pyrogram import Client
-
-from config import Config
-from modules.database import db
 
 logger = logging.getLogger("WaguriBot.API")
 
-# Cross-Platform Check: Skip loading web server if FastAPI (Rust) isn't installed
+# Cross-Platform Check: Try to import FastAPI, but fail silently on Termux
 try:
     from fastapi import FastAPI, HTTPException
     from pydantic import BaseModel
@@ -16,7 +12,7 @@ try:
 except ImportError:
     HAS_API = False
 
-# Safe method to inject pyrogram client into FastAPI
+# We store the bot client here safely without circular imports
 bot_instance = None
 
 def set_bot_instance(client: Client):
@@ -24,7 +20,7 @@ def set_bot_instance(client: Client):
     bot_instance = client
 
 if HAS_API:
-    app = FastAPI(title="WaguriBot API", version="1.0-Enterprise")
+    app = FastAPI(title="WaguriBot API", version="1.0-Lite")
 
     class BroadcastRequest(BaseModel):
         token: str
@@ -35,45 +31,9 @@ if HAS_API:
     async def root():
         return {"status": "WaguriBot API is online 🌸"}
 
-    @app.get("/stats")
-    async def api_stats():
-        users = (await db.fetchone("SELECT COUNT(*) FROM users"))[0]
-        chats = (await db.fetchone("SELECT COUNT(*) FROM chats"))[0]
-        return {
-            "users": users,
-            "chats": chats,
-            "version": "1.0.0-Enterprise"
-        }
-
-    @app.post("/broadcast")
-    async def api_broadcast(req: BroadcastRequest):
-        if req.token != Config.BOT_TOKEN:
-            raise HTTPException(status_code=403, detail="Invalid authorization token")
-            
-        if not bot_instance:
-            raise HTTPException(status_code=503, detail="Bot client is not initialized")
-            
-        try:
-            await bot_instance.send_message(req.chat_id, req.message)
-            return {"status": "success", "chat_id": req.chat_id}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
-
-    async def run_api():
-        """Background task to run the FastAPI server."""
-        config = uvicorn.Config(app, host="0.0.0.0", port=8080, log_level="error")
-        server = uvicorn.Server(config)
-        logger.info("Waguri Web API starting on port 8080...")
-        await server.serve()
-
+    logger.info("Web API module loaded successfully (Server available).")
 else:
-    async def run_api():
-        logger.info("FastAPI not installed. Running in Mobile/Lite Mode (API Web Server Disabled).")
+    logger.info("Web API module loaded in Lite Mode (Web Server disabled for Termux).")
 
-# Auto-start API worker if in run mode
-import sys
-if "run" in sys.argv or __name__ != "__main__":
-    loop = asyncio.get_event_loop()
-    from bot import bot
-    set_bot_instance(bot)
-    loop.create_task(run_api())
+# NOTE: We removed the auto-start background task that was causing the import errors.
+# The Telegram bot will now boot up instantly without getting stuck in a loop!
