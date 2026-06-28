@@ -1,137 +1,75 @@
 import aiosqlite
 import logging
-from typing import Optional, List, Tuple, Any
 import asyncio
-from pathlib import Path
+from typing import Optional, List, Tuple
 
 from config import Config
 
 logger = logging.getLogger("WaguriBot.Database")
 
 class Database:
-    """Enterprise Asynchronous Database Wrapper for SQLite."""
-    
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._conn: Optional[aiosqlite.Connection] = None
         self._lock = asyncio.Lock()
 
     async def connect(self):
-        """Initializes connection to the SQLite database."""
         if not self._conn:
             self._conn = await aiosqlite.connect(self.db_path)
-            # Enable Foreign Keys and WAL mode for high concurrency
             await self._conn.execute("PRAGMA foreign_keys = ON;")
             await self._conn.execute("PRAGMA journal_mode = WAL;")
-            await self._conn.execute("PRAGMA synchronous = NORMAL;")
-            logger.info(f"Connected to SQLite database at {self.db_path}")
 
     async def close(self):
-        """Closes the database connection safely."""
         if self._conn:
             await self._conn.close()
             self._conn = None
-            logger.info("Database connection closed.")
 
     async def execute(self, query: str, *args) -> aiosqlite.Cursor:
-        """Executes a query and commits changes."""
         async with self._lock:
-            if not self._conn:
-                await self.connect()
+            if not self._conn: await self.connect()
             cursor = await self._conn.execute(query, args)
             await self._conn.commit()
             return cursor
 
-    async def executemany(self, query: str, args: List[Tuple[Any, ...]]):
-        """Executes multiple queries and commits changes."""
-        async with self._lock:
-            if not self._conn:
-                await self.connect()
-            await self._conn.executemany(query, args)
-            await self._conn.commit()
-
     async def fetchone(self, query: str, *args) -> Optional[Tuple]:
-        """Fetches a single row."""
         async with self._lock:
-            if not self._conn:
-                await self.connect()
+            if not self._conn: await self.connect()
             cursor = await self._conn.execute(query, args)
             return await cursor.fetchone()
 
     async def fetchall(self, query: str, *args) -> List[Tuple]:
-        """Fetches all matching rows."""
         async with self._lock:
-            if not self._conn:
-                await self.connect()
+            if not self._conn: await self.connect()
             cursor = await self._conn.execute(query, args)
             return await cursor.fetchall()
 
     async def create_tables(self):
-        """Creates the necessary schemas if they don't exist."""
         schemas = [
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                is_premium BOOLEAN DEFAULT 0,
-                joined_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS chats (
-                chat_id INTEGER PRIMARY KEY,
-                title TEXT,
-                added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS warns (
-                warn_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id INTEGER,
-                user_id INTEGER,
-                admin_id INTEGER,
-                reason TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(chat_id) REFERENCES chats(chat_id),
-                FOREIGN KEY(user_id) REFERENCES users(user_id)
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS settings (
-                chat_id INTEGER PRIMARY KEY,
-                language TEXT DEFAULT 'en',
-                antispam_enabled BOOLEAN DEFAULT 1,
-                welcomes_enabled BOOLEAN DEFAULT 1,
-                FOREIGN KEY(chat_id) REFERENCES chats(chat_id)
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS notes (
-                chat_id INTEGER,
-                name TEXT,
-                content TEXT,
-                file_id TEXT,
-                type TEXT,
-                PRIMARY KEY (chat_id, name),
-                FOREIGN KEY(chat_id) REFERENCES chats(chat_id)
-            );
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS economy (
-                user_id INTEGER PRIMARY KEY,
-                wallet INTEGER DEFAULT 0,
-                bank INTEGER DEFAULT 0,
-                last_daily TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES users(user_id)
-            );
-            """
+            "CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, username TEXT, first_name TEXT, is_premium BOOLEAN DEFAULT 0, joined_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+            "CREATE TABLE IF NOT EXISTS chats (chat_id INTEGER PRIMARY KEY, title TEXT, added_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+            "CREATE TABLE IF NOT EXISTS warns (warn_id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, user_id INTEGER, admin_id INTEGER, reason TEXT, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+            "CREATE TABLE IF NOT EXISTS settings (chat_id INTEGER PRIMARY KEY, language TEXT DEFAULT 'en', antispam_enabled BOOLEAN DEFAULT 1, welcomes_enabled BOOLEAN DEFAULT 1);",
+            "CREATE TABLE IF NOT EXISTS notes (chat_id INTEGER, name TEXT, content TEXT, file_id TEXT, type TEXT, PRIMARY KEY (chat_id, name));",
+            "CREATE TABLE IF NOT EXISTS economy (user_id INTEGER PRIMARY KEY, wallet INTEGER DEFAULT 0, bank INTEGER DEFAULT 0, last_daily TIMESTAMP);",
+            "CREATE TABLE IF NOT EXISTS flood_settings (chat_id INTEGER PRIMARY KEY, limit_count INTEGER DEFAULT 0, action TEXT DEFAULT 'mute');",
+            "CREATE TABLE IF NOT EXISTS raid_settings (chat_id INTEGER PRIMARY KEY, is_active BOOLEAN DEFAULT 0, action TEXT DEFAULT 'kick', trigger_count INTEGER DEFAULT 5, time_window INTEGER DEFAULT 10);",
+            "CREATE TABLE IF NOT EXISTS captcha_settings (chat_id INTEGER PRIMARY KEY, is_enabled BOOLEAN DEFAULT 0, mode TEXT DEFAULT 'button');",
+            "CREATE TABLE IF NOT EXISTS gbans (user_id INTEGER PRIMARY KEY, reason TEXT, admin_id INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+            "CREATE TABLE IF NOT EXISTS welcome_settings (chat_id INTEGER PRIMARY KEY, message TEXT DEFAULT '🌸 Welcome {mention} to {chat}!', is_enabled BOOLEAN DEFAULT 1);",
+            "CREATE TABLE IF NOT EXISTS goodbye_settings (chat_id INTEGER PRIMARY KEY, message TEXT DEFAULT '🌸 Goodbye {first}, we will miss you!', is_enabled BOOLEAN DEFAULT 0);",
+            "CREATE TABLE IF NOT EXISTS report_settings (chat_id INTEGER PRIMARY KEY, is_enabled BOOLEAN DEFAULT 1);",
+            "CREATE TABLE IF NOT EXISTS log_channels (chat_id INTEGER PRIMARY KEY, log_channel_id INTEGER);",
+            "CREATE TABLE IF NOT EXISTS automod_rules (chat_id INTEGER, rule_type TEXT, action TEXT DEFAULT 'delete', PRIMARY KEY (chat_id, rule_type));",
+            "CREATE TABLE IF NOT EXISTS blacklist_words (chat_id INTEGER, word TEXT, PRIMARY KEY (chat_id, word));",
+            "CREATE TABLE IF NOT EXISTS whitelist_users (chat_id INTEGER, user_id INTEGER, PRIMARY KEY (chat_id, user_id));",
+            "CREATE TABLE IF NOT EXISTS approved_users (chat_id INTEGER, user_id INTEGER, PRIMARY KEY (chat_id, user_id));",
+            "CREATE TABLE IF NOT EXISTS xp_system (chat_id INTEGER, user_id INTEGER, xp INTEGER DEFAULT 0, level INTEGER DEFAULT 1, PRIMARY KEY (chat_id, user_id));",
+            "CREATE TABLE IF NOT EXISTS reputation (chat_id INTEGER, user_id INTEGER, rep INTEGER DEFAULT 0, PRIMARY KEY (chat_id, user_id));",
+            "CREATE TABLE IF NOT EXISTS security_settings (chat_id INTEGER PRIMARY KEY, file_scan BOOLEAN DEFAULT 1, scam_detect BOOLEAN DEFAULT 1);",
+            "CREATE TABLE IF NOT EXISTS verified_users (user_id INTEGER PRIMARY KEY, admin_id INTEGER, timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP);",
+            "CREATE TABLE IF NOT EXISTS scheduled_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, user_id INTEGER, content TEXT, trigger_time TIMESTAMP);",
+            "CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, user_id INTEGER, content TEXT, trigger_time TIMESTAMP);"
         ]
-        
-        for schema in schemas:
-            await self.execute(schema)
-            
-        logger.info("Database schemas verified successfully.")
+        for s in schemas: await self.execute(s)
 
-# Singleton pattern for the database
 db = Database(Config.DATABASE_PATH)
