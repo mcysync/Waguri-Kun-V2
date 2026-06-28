@@ -53,14 +53,3 @@ async def global_unban(client: Client, message: Message):
             failed += 1
             
     await message.reply_text(f"🌸 **Global Unban Complete!** ✨\nUser: {target_mention}\nUnbanned in `{success}` chats.")
-
-@Client.on_message(filters.new_chat_members, group=6)
-async def gban_watcher(client: Client, message: Message):
-    for user in message.new_chat_members:
-        is_gbanned = await db.fetchone("SELECT reason FROM gbans WHERE user_id = ?", user.id)
-        if is_gbanned:
-            try:
-                await client.ban_chat_member(message.chat.id, user.id)
-                await message.reply_text(f"🌸 **Blocked!** 🛑\n{user.mention} is globally banned.\nReason: `{is_gbanned[0]}`")
-            except Exception:
-                pass
