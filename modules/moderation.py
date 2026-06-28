@@ -16,42 +16,39 @@ async def ban_user(client: Client, message: Message):
     
     target_id, target_mention, reason = await extract_target(client, message)
     if not target_id:
-        return await message.reply_text("🌸 Please reply to a user or provide their ID to ban them.")
+        return await message.reply_text("🌸 Please reply to a user, or type their `@username` or `ID`.")
         
     try:
         member = await client.get_chat_member(message.chat.id, target_id)
         if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-            return await message.reply_text("🌸 I can't ban an administrator.")
+            return await message.reply_text("🌸 I can't punish an administrator.")
     except Exception:
-        pass
+        pass # Ignore if not in chat
         
     ban_time = None
-    duration_text = ""
-    
     if cmd == "tban":
         args = message.text.split()
         time_idx = 1 if message.reply_to_message else 2
         if len(args) > time_idx:
-            parsed_time = parse_time(args[time_idx])
-            if parsed_time:
-                ban_time = datetime.now() + timedelta(seconds=parsed_time)
-                duration_text = f" for {args[time_idx]}"
+            parsed = parse_time(args[time_idx])
+            if parsed:
+                ban_time = datetime.now() + timedelta(seconds=parsed)
                 reason = " ".join(args[time_idx+1:])
 
     is_silent = cmd in ["sban", "shadowban"]
     admin_name = message.from_user.mention if message.from_user else "Admin"
     
+    # RAW BAN EXECUTION
     try:
-        await client.ban_chat_member(message.chat.id, target_id, until_date=ban_time)
+        await client.ban_chat_member(chat_id=message.chat.id, user_id=target_id, until_date=ban_time)
+        
         if not is_silent:
-            reply_text = f"🌸 **Banned!** 🔨\n**Target:** {target_mention}{duration_text}\n**Admin:** {admin_name}"
+            reply_text = f"🌸 **Banned!** 🔨\n**Target:** {target_mention}\n**Admin:** {admin_name}"
             if reason: reply_text += f"\n**Reason:** `{reason}`"
             await message.reply_text(reply_text)
         else:
             await message.delete()
             if message.reply_to_message: await message.reply_to_message.delete()
-    except AttributeError:
-        await message.reply_text("🌸 Database Cache Error: Try banning them by typing their @username instead of replying.")
     except Exception as e:
         await message.reply_text(f"🌸 Failed to ban: `{e}`")
 
@@ -63,42 +60,39 @@ async def mute_user(client: Client, message: Message):
     
     target_id, target_mention, reason = await extract_target(client, message)
     if not target_id:
-        return await message.reply_text("🌸 Please reply to a user or provide their ID to mute them.")
+        return await message.reply_text("🌸 Please reply to a user, or type their `@username` or `ID`.")
         
     try:
         member = await client.get_chat_member(message.chat.id, target_id)
         if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-            return await message.reply_text("🌸 I can't mute an administrator.")
+            return await message.reply_text("🌸 I can't punish an administrator.")
     except Exception:
         pass
         
     mute_time = None
-    duration_text = ""
-    
     if cmd == "tmute":
         args = message.text.split()
         time_idx = 1 if message.reply_to_message else 2
         if len(args) > time_idx:
-            parsed_time = parse_time(args[time_idx])
-            if parsed_time:
-                mute_time = datetime.now() + timedelta(seconds=parsed_time)
-                duration_text = f" for {args[time_idx]}"
+            parsed = parse_time(args[time_idx])
+            if parsed:
+                mute_time = datetime.now() + timedelta(seconds=parsed)
                 reason = " ".join(args[time_idx+1:])
 
     is_silent = cmd == "smute"
     permissions = ChatPermissions(can_send_messages=False, can_send_media_messages=False, can_send_other_messages=False)
     admin_name = message.from_user.mention if message.from_user else "Admin"
     
+    # RAW MUTE EXECUTION
     try:
-        await client.restrict_chat_member(message.chat.id, target_id, permissions, until_date=mute_time)
+        await client.restrict_chat_member(chat_id=message.chat.id, user_id=target_id, permissions=permissions, until_date=mute_time)
+        
         if not is_silent:
-            reply_text = f"🌸 **Muted!** 🤐\n**Target:** {target_mention}{duration_text}\n**Admin:** {admin_name}"
+            reply_text = f"🌸 **Muted!** 🤐\n**Target:** {target_mention}\n**Admin:** {admin_name}"
             if reason: reply_text += f"\n**Reason:** `{reason}`"
             await message.reply_text(reply_text)
         else:
             await message.delete()
-    except AttributeError:
-        await message.reply_text("🌸 Database Cache Error: Try muting them by typing their @username instead of replying.")
     except Exception as e:
         await message.reply_text(f"🌸 Failed to mute: `{e}`")
 
@@ -107,7 +101,7 @@ async def mute_user(client: Client, message: Message):
 @bot_admin_required("can_restrict_members")
 async def unmute_user(client: Client, message: Message):
     target_id, target_mention, _ = await extract_target(client, message)
-    if not target_id: return await message.reply_text("🌸 Please specify a user to unmute.")
+    if not target_id: return await message.reply_text("🌸 Please specify a user.")
         
     try:
         chat = await client.get_chat(message.chat.id)
@@ -121,7 +115,7 @@ async def unmute_user(client: Client, message: Message):
 @bot_admin_required("can_restrict_members")
 async def unban_user(client: Client, message: Message):
     target_id, target_mention, _ = await extract_target(client, message)
-    if not target_id: return await message.reply_text("🌸 Please specify a user to unban.")
+    if not target_id: return await message.reply_text("🌸 Please specify a user.")
         
     try:
         await client.unban_chat_member(message.chat.id, target_id)
@@ -134,7 +128,7 @@ async def unban_user(client: Client, message: Message):
 @bot_admin_required("can_restrict_members")
 async def kick_user(client: Client, message: Message):
     target_id, target_mention, reason = await extract_target(client, message)
-    if not target_id: return await message.reply_text("🌸 Please specify a user to kick.")
+    if not target_id: return await message.reply_text("🌸 Please specify a user.")
         
     try:
         try:
