@@ -46,7 +46,6 @@ def admin_required(permissions: Optional[str] = None):
             if message.chat.type == ChatType.PRIVATE:
                 return await func(client, message, *args, **kwargs)
             
-            # Anonymous Admin or Channel protection bypass
             if message.sender_chat:
                 return await func(client, message, *args, **kwargs)
                 
@@ -96,24 +95,42 @@ def bot_admin_required(permissions: Optional[str] = None):
         return wrapper
     return decorator
 
-def extract_user(message: Message) -> tuple[Optional[Union[int, str]], Optional[str]]:
-    user_id = None
+# THE BULLETPROOF TARGET EXTRACTOR
+async def extract_target(client: Client, message: Message):
+    """Returns (target_id, target_mention, reason) WITHOUT failing on network calls."""
+    args = message.text.split() if message.text else []
     reason = None
-    if not message.text: return None, None
-    args = message.text.split()
-
+    
+    # 1. IF YOU REPLIED TO A MESSAGE (Zero API calls, instant execution)
     if message.reply_to_message:
-        if message.reply_to_message.from_user:
-            user_id = message.reply_to_message.from_user.id
-        elif message.reply_to_message.sender_chat:
-            user_id = message.reply_to_message.sender_chat.id
         reason = " ".join(args[1:]) if len(args) > 1 else None
-    else:
-        if len(args) > 1:
-            if args[1].isdigit() or (args[1].startswith("-") and args[1][1:].isdigit()):
-                user_id = int(args[1])
-            elif args[1].startswith("@"):
-                user_id = args[1]
-            reason = " ".join(args[2:]) if len(args) > 2 else None
-            
-    return user_id, reason
+        if message.reply_to_message.from_user:
+            u = message.reply_to_message.from_user
+            return u.id, u.mention, reason
+        elif message.reply_to_message.sender_chat:
+            c = message.reply_to_message.sender_chat
+            return c.id, f"**{c.title}**", reason
+
+    # 2. IF YOU PROVIDED AN ID OR USERNAME IN TEXT
+    if len(args) > 1:
+        raw_target = args[1]
+        reason = " ".join(args[2:]) if len(args) > 2 else None
+        
+        # If it's a numeric ID
+        if raw_target.lstrip("-").isdigit():
+            target_id = int(raw_target)
+            try:
+                user = await client.get_users(target_id)
+                return user.id, user.mention, reason
+            except Exception:
+                return target_id, f"`{target_id}`", reason # Fallback to raw ID immediately
+        
+        # If it's a username (@name)
+        else:
+            try:
+                user = await client.get_users(raw_target)
+                return user.id, user.mention, reason
+            except Exception:
+                pass
+                
+    return None, None, None
