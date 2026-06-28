@@ -3,7 +3,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 from pyrogram.enums import ChatMemberStatus
 
-from utils import admin_required, bot_admin_required, extract_user
+from utils import admin_required, bot_admin_required, extract_target
 from config import Config
 from modules.database import db
 
@@ -19,80 +19,56 @@ async def get_warns(chat_id: int, user_id: int) -> int:
 @bot_admin_required("can_restrict_members")
 async def warn_user(client: Client, message: Message):
     cmd = message.command[0].lower()
-    user_id, reason = extract_user(message)
     
-    if not user_id:
-        return await message.reply_text("🌸 Please reply to a user to warn them.")
-        
-    user_mention = str(user_id)
-    try:
-        if isinstance(user_id, str) and not user_id.isdigit():
-            user = await client.get_users(user_id)
-            user_id = user.id
-            user_mention = user.mention
-        else:
-            user_id = int(user_id)
-            try:
-                user = await client.get_users(user_id)
-                user_mention = user.mention
-            except Exception:
-                pass
-    except Exception:
-        pass
+    # INSTANT EXTRACTION
+    target_id, target_mention, reason = await extract_target(client, message)
+    if not target_id: return await message.reply_text("🌸 Please reply to a user to warn them.")
         
     try:
-        member = await client.get_chat_member(message.chat.id, user_id)
+        member = await client.get_chat_member(message.chat.id, target_id)
         if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
             return await message.reply_text("🌸 Admins are immune to my warnings, silly!")
-    except Exception:
-        pass
+    except Exception: pass
             
     reason_text = reason or "No reason provided."
     admin_id = message.from_user.id if message.from_user else 0
     
     try:
-        await db.execute(
-            "INSERT INTO warns (chat_id, user_id, admin_id, reason) VALUES (?, ?, ?, ?)",
-            message.chat.id, user_id, admin_id, reason_text
-        )
-        
-        warn_count = await get_warns(message.chat.id, user_id)
+        await db.execute("INSERT INTO warns (chat_id, user_id, admin_id, reason) VALUES (?, ?, ?, ?)", message.chat.id, target_id, admin_id, reason_text)
+        warn_count = await get_warns(message.chat.id, target_id)
         max_warns = Config.MAX_WARNS
         
-        if cmd == "swarn":
-            await message.delete()
+        if cmd == "swarn": await message.delete()
             
         if warn_count >= max_warns:
-            await client.ban_chat_member(message.chat.id, user_id)
-            await db.execute("DELETE FROM warns WHERE chat_id = ? AND user_id = ?", message.chat.id, user_id)
+            await client.ban_chat_member(message.chat.id, target_id)
+            await db.execute("DELETE FROM warns WHERE chat_id = ? AND user_id = ?", message.chat.id, target_id)
             if cmd != "swarn":
-                await message.reply_text(f"🌸 **Max Warns Reached!** 🔨\n**Target:** {user_mention}\nHas been banned after receiving {max_warns}/{max_warns} warnings.")
+                await message.reply_text(f"🌸 **Max Warns Reached!** 🔨\n**Target:** {target_mention}\nHas been banned after {max_warns}/{max_warns} warnings.")
         else:
             if cmd != "swarn":
-                await message.reply_text(f"🌸 **Warning!** ⚠️\n**Target:** {user_mention}\n**Warns:** `{warn_count}/{max_warns}`\n**Reason:** `{reason_text}`")
+                await message.reply_text(f"🌸 **Warning!** ⚠️\n**Target:** {target_mention}\n**Warns:** `{warn_count}/{max_warns}`\n**Reason:** `{reason_text}`")
                 
     except Exception as e:
         await message.reply_text(f"🌸 An error occurred applying the warning: `{e}`")
 
 @Client.on_message(filters.command("warnings") & filters.group)
 async def check_warnings(client: Client, message: Message):
-    user_id, _ = extract_user(message)
-    target = user_id if user_id else (message.from_user.id if message.from_user else 0)
-    target = int(target) if str(target).isdigit() or str(target).startswith("-") else target
+    target_id, target_mention, _ = await extract_target(client, message)
+    
+    # If no target provided, check self
+    if not target_id:
+        target_id = message.from_user.id if message.from_user else 0
+        target_mention = message.from_user.mention if message.from_user else "You"
+        
+    if target_id == 0: return
     
     try:
-        warns = await db.fetchall(
-            "SELECT reason, timestamp FROM warns WHERE chat_id = ? AND user_id = ? ORDER BY timestamp DESC",
-            message.chat.id, target
-        )
-        
-        if not warns:
-            return await message.reply_text(f"🌸 User `{target}` is a good bean! No warnings here. ✨")
+        warns = await db.fetchall("SELECT reason, timestamp FROM warns WHERE chat_id = ? AND user_id = ? ORDER BY timestamp DESC", message.chat.id, target_id)
+        if not warns: return await message.reply_text(f"🌸 {target_mention} is a good bean! No warnings here. ✨")
             
-        text = f"🌸 **Warnings for `{target}`** ({len(warns)}/{Config.MAX_WARNS}):\n\n"
-        for idx, (reason, ts) in enumerate(warns, 1):
-            text += f"**{idx}.** `{reason}`\n"
-            
+        text = f"🌸 **Warnings for {target_mention}** ({len(warns)}/{Config.MAX_WARNS}):\n\n"
+        for idx, (reason, ts) in enumerate(warns, 1): text += f"**{idx}.** `{reason}`\n"
         await message.reply_text(text)
     except Exception as e:
         await message.reply_text(f"🌸 Failed to retrieve warnings: `{e}`")
@@ -100,13 +76,11 @@ async def check_warnings(client: Client, message: Message):
 @Client.on_message(filters.command(["clearwarns", "rmwarns"]) & filters.group)
 @admin_required("can_restrict_members")
 async def clear_warnings(client: Client, message: Message):
-    user_id, _ = extract_user(message)
-    if not user_id:
-        return await message.reply_text("🌸 Please reply to a user to clear their warnings.")
+    target_id, target_mention, _ = await extract_target(client, message)
+    if not target_id: return await message.reply_text("🌸 Please reply to a user to clear their warnings.")
         
     try:
-        user_id = int(user_id) if str(user_id).isdigit() or str(user_id).startswith("-") else user_id
-        await db.execute("DELETE FROM warns WHERE chat_id = ? AND user_id = ?", message.chat.id, user_id)
-        await message.reply_text(f"🌸 Poof! 🪄 All warnings for `{user_id}` have been cleared.")
+        await db.execute("DELETE FROM warns WHERE chat_id = ? AND user_id = ?", message.chat.id, target_id)
+        await message.reply_text(f"🌸 Poof! 🪄 All warnings for {target_mention} have been cleared.")
     except Exception as e:
         await message.reply_text(f"🌸 Failed to clear warnings: `{e}`")
