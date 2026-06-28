@@ -8,25 +8,20 @@ from utils import admin_required, bot_admin_required, extract_target, parse_time
 
 logger = logging.getLogger("WaguriBot.Moderation")
 
-@Client.on_message(filters.command(["ban", "tban", "sban"]) & filters.group)
+@Client.on_message(filters.command(["ban", "tban", "sban", "shadowban"]) & filters.group)
 @admin_required("can_restrict_members")
 @bot_admin_required("can_restrict_members")
 async def ban_user(client: Client, message: Message):
     cmd = message.command[0].lower()
-    
     target_id, target_mention, reason = await extract_target(client, message)
-    if not target_id:
-        return await message.reply_text("🌸 I cannot find this user! Reply to their message, or provide a valid ID.")
-        
-    if target_id == client.me.id:
-        return await message.reply_text("🌸 I can't ban myself! Baka!")
+    
+    if not target_id: return await message.reply_text("🌸 I cannot find this user! Reply to them or provide a valid ID.")
+    if target_id == client.me.id: return await message.reply_text("🌸 I can't ban myself! Baka!")
         
     try:
         member = await client.get_chat_member(message.chat.id, target_id)
-        if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-            return await message.reply_text("🌸 I can't punish an administrator.")
-    except Exception:
-        pass # User left or is anonymous
+        if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]: return await message.reply_text("🌸 I can't punish an administrator.")
+    except Exception: pass
         
     ban_time = None
     if cmd == "tban":
@@ -41,10 +36,8 @@ async def ban_user(client: Client, message: Message):
     admin_name = message.from_user.mention if message.from_user else "Admin"
     
     try:
-        # Pass the strict integer ID
         await client.ban_chat_member(chat_id=message.chat.id, user_id=target_id, until_date=ban_time)
-        
-        if cmd != "sban":
+        if cmd not in ["sban", "shadowban"]:
             reply_text = f"🌸 **Banned!** 🔨\n**Target:** {target_mention}\n**Admin:** {admin_name}"
             if reason: reply_text += f"\n**Reason:** `{reason}`"
             await message.reply_text(reply_text)
@@ -59,17 +52,14 @@ async def ban_user(client: Client, message: Message):
 @bot_admin_required("can_restrict_members")
 async def mute_user(client: Client, message: Message):
     cmd = message.command[0].lower()
-    
     target_id, target_mention, reason = await extract_target(client, message)
-    if not target_id:
-        return await message.reply_text("🌸 I cannot find this user! Reply to their message, or provide a valid ID.")
+    
+    if not target_id: return await message.reply_text("🌸 I cannot find this user! Reply to them or provide a valid ID.")
         
     try:
         member = await client.get_chat_member(message.chat.id, target_id)
-        if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-            return await message.reply_text("🌸 I can't punish an administrator.")
-    except Exception:
-        pass
+        if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]: return await message.reply_text("🌸 I can't punish an administrator.")
+    except Exception: pass
         
     mute_time = None
     if cmd == "tmute":
@@ -86,7 +76,6 @@ async def mute_user(client: Client, message: Message):
     
     try:
         await client.restrict_chat_member(chat_id=message.chat.id, user_id=target_id, permissions=permissions, until_date=mute_time)
-        
         if cmd != "smute":
             reply_text = f"🌸 **Muted!** 🤐\n**Target:** {target_mention}\n**Admin:** {admin_name}"
             if reason: reply_text += f"\n**Reason:** `{reason}`"
@@ -102,7 +91,6 @@ async def mute_user(client: Client, message: Message):
 async def unmute_user(client: Client, message: Message):
     target_id, target_mention, _ = await extract_target(client, message)
     if not target_id: return await message.reply_text("🌸 Please specify a user.")
-        
     try:
         chat = await client.get_chat(message.chat.id)
         await client.restrict_chat_member(message.chat.id, target_id, permissions=chat.permissions)
@@ -116,7 +104,6 @@ async def unmute_user(client: Client, message: Message):
 async def unban_user(client: Client, message: Message):
     target_id, target_mention, _ = await extract_target(client, message)
     if not target_id: return await message.reply_text("🌸 Please specify a user.")
-        
     try:
         await client.unban_chat_member(message.chat.id, target_id)
         await message.reply_text(f"🌸 **Unbanned!** ✨\n{target_mention} has been unbanned.")
@@ -129,18 +116,14 @@ async def unban_user(client: Client, message: Message):
 async def kick_user(client: Client, message: Message):
     target_id, target_mention, reason = await extract_target(client, message)
     if not target_id: return await message.reply_text("🌸 Please specify a user.")
-        
     try:
         try:
             member = await client.get_chat_member(message.chat.id, target_id)
-            if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-                return await message.reply_text("🌸 Cannot kick administrators.")
-        except Exception:
-            pass
+            if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]: return await message.reply_text("🌸 Cannot kick administrators.")
+        except Exception: pass
             
         await client.ban_chat_member(message.chat.id, target_id)
         await client.unban_chat_member(message.chat.id, target_id)
-        
         text = f"🌸 **Kicked!** 🥾\n**Target:** {target_mention}"
         if reason: text += f"\n**Reason:** `{reason}`"
         await message.reply_text(text)
