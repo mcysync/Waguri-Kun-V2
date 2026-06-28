@@ -1,99 +1,111 @@
-import logging
-import base64
-import uuid
-import hashlib
-import json
-import urllib.parse
-from pyrogram import Client, filters
-from pyrogram.types import Message
-import httpx
+import re
+from functools import wraps
+from typing import Callable, Optional, Union
+
+from pyrogram import Client
+from pyrogram.types import Message, CallbackQuery
+from pyrogram.enums import ChatMemberStatus, ChatType
 
 from config import Config
 
-logger = logging.getLogger("WaguriBot.Utility")
+TIME_REGEX = re.compile(r"(\d+)([smhd])")
 
-@Client.on_message(filters.command("base64"))
-async def encode_decode_b64(client: Client, message: Message):
-    args = message.text.split(None, 2)
-    if len(args) < 3:
-        return await message.reply_text("🌸 Usage: `/base64 [encode|decode] [text]`")
-        
-    action = args[1].lower()
-    text = args[2]
-    
-    try:
-        if action == "encode":
-            result = base64.b64encode(text.encode()).decode()
-            await message.reply_text(f"🌸 **Encoded Base64:**\n`{result}`")
-        elif action == "decode":
-            result = base64.b64decode(text.encode()).decode()
-            await message.reply_text(f"🌸 **Decoded Text:**\n`{result}`")
-        else:
-            await message.reply_text("🌸 Use `encode` or `decode`.")
-    except Exception:
-        await message.reply_text("🌸 Failed to process. Are you sure it's valid Base64?")
+def parse_time(time_str: str) -> Optional[int]:
+    match = TIME_REGEX.match(time_str.lower())
+    if not match: return None
+    value, unit = int(match.group(1)), match.group(2)
+    multipliers = {'s': 1, 'm': 60, 'h': 3600, 'd': 86400}
+    return value * multipliers[unit]
 
-@Client.on_message(filters.command("uuid"))
-async def generate_uuid(client: Client, message: Message):
-    val = str(uuid.uuid4())
-    await message.reply_text(f"🌸 **Generated UUID (v4):**\n`{val}`")
+def owner_only(func: Callable) -> Callable:
+    @wraps(func)
+    async def wrapper(client: Client, update: Union[Message, CallbackQuery], *args, **kwargs):
+        user_id = update.from_user.id if update.from_user else 0
+        if user_id != Config.OWNER_ID:
+            if isinstance(update, Message): await update.reply_text("🌸 Strictly for my master.")
+            else: await update.answer("Strictly for my master!", show_alert=True)
+            return
+        return await func(client, update, *args, **kwargs)
+    return wrapper
 
-@Client.on_message(filters.command("hash"))
-async def hash_string(client: Client, message: Message):
-    args = message.text.split(None, 2)
-    if len(args) < 3:
-        return await message.reply_text("🌸 Usage: `/hash [md5|sha1|sha256] [text]`")
-        
-    algo = args[1].lower()
-    text = args[2].encode()
-    
-    if algo == "md5":
-        res = hashlib.md5(text).hexdigest()
-    elif algo == "sha1":
-        res = hashlib.sha1(text).hexdigest()
-    elif algo == "sha256":
-        res = hashlib.sha256(text).hexdigest()
-    else:
-        return await message.reply_text("🌸 Unsupported algorithm! Use md5, sha1, or sha256.")
-        
-    await message.reply_text(f"🌸 **{algo.upper()} Hash:**\n`{res}`")
+def sudo_only(func: Callable) -> Callable:
+    @wraps(func)
+    async def wrapper(client: Client, update: Union[Message, CallbackQuery], *args, **kwargs):
+        user_id = update.from_user.id if update.from_user else 0
+        if not Config.is_sudo(user_id):
+            if isinstance(update, Message): await update.reply_text("🌸 Sudo privileges required!")
+            else: await update.answer("Sudo privileges required!", show_alert=True)
+            return
+        return await func(client, update, *args, **kwargs)
+    return wrapper
 
-@Client.on_message(filters.command("weather"))
-async def get_weather(client: Client, message: Message):
-    if len(message.command) < 2:
-        return await message.reply_text("🌸 Usage: `/weather [city]`")
-        
-    city = urllib.parse.quote(message.text.split(None, 1)[1])
-    
-    try:
-        # Using wttr.in for simple format without needing an API key, 
-        # though OpenWeather is better for enterprise.
-        async with httpx.AsyncClient() as http_client:
-            res = await http_client.get(f"https://wttr.in/{city}?format=3")
-            res.raise_for_status()
-            weather = res.text.strip()
+def admin_required(permissions: Optional[str] = None):
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        async def wrapper(client: Client, message: Message, *args, **kwargs):
+            if message.chat.type == ChatType.PRIVATE:
+                return await func(client, message, *args, **kwargs)
             
-            if not weather:
-                return await message.reply_text("🌸 Couldn't find weather for that location.")
+            user_id = message.from_user.id if message.from_user else 0
+            if Config.is_sudo(user_id): return await func(client, message, *args, **kwargs)
                 
-            await message.reply_text(f"🌸 **Weather Report:**\n\n`{weather}`")
-    except Exception as e:
-        logger.error(f"Weather error: {e}")
-        await message.reply_text("🌸 Failed to retrieve weather data.")
-
-@Client.on_message(filters.command("json"))
-async def format_json(client: Client, message: Message):
-    if not message.reply_to_message or not message.reply_to_message.text:
-        return await message.reply_text("🌸 Reply to a message containing JSON to prettify it.")
-        
-    try:
-        parsed = json.loads(message.reply_to_message.text)
-        pretty = json.dumps(parsed, indent=4)
-        
-        # Max message length check
-        if len(pretty) > 4000:
-            return await message.reply_text("🌸 The output JSON is too large for Telegram.")
+            try:
+                member = await client.get_chat_member(message.chat.id, user_id)
+            except Exception:
+                return await message.reply_text("🌸 I couldn't verify your admin status.")
             
-        await message.reply_text(f"🌸 **Prettified JSON:**\n```json\n{pretty}\n```")
-    except json.JSONDecodeError:
-        await message.reply_text("🌸 Invalid JSON string provided!")
+            if member.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+                return await message.reply_text("🌸 You need to be an admin to use this command!")
+                
+            if permissions and member.status != ChatMemberStatus.OWNER:
+                if not getattr(member.privileges, permissions, False):
+                    return await message.reply_text(f"🌸 You lack the `{permissions}` privilege!")
+                    
+            return await func(client, message, *args, **kwargs)
+        return wrapper
+    return decorator
+
+def bot_admin_required(permissions: Optional[str] = None):
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        async def wrapper(client: Client, message: Message, *args, **kwargs):
+            if message.chat.type == ChatType.PRIVATE:
+                return await func(client, message, *args, **kwargs)
+                
+            try:
+                bot_member = await client.get_chat_member(message.chat.id, client.me.id)
+            except Exception:
+                return await message.reply_text("🌸 I couldn't fetch my own admin status.")
+            
+            if bot_member.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+                return await message.reply_text("🌸 Please make me an admin first!")
+                
+            if permissions and bot_member.status != ChatMemberStatus.OWNER:
+                if not getattr(bot_member.privileges, permissions, False):
+                    return await message.reply_text(f"🌸 I need the `{permissions}` right to do that!")
+                    
+            return await func(client, message, *args, **kwargs)
+        return wrapper
+    return decorator
+
+def extract_user(message: Message) -> tuple[Optional[Union[int, str]], Optional[str]]:
+    user_id = None
+    reason = None
+    if not message.text: return None, None
+    args = message.text.split()
+
+    if message.reply_to_message:
+        if message.reply_to_message.from_user:
+            user_id = message.reply_to_message.from_user.id
+        elif message.reply_to_message.sender_chat:
+            user_id = message.reply_to_message.sender_chat.id
+        reason = " ".join(args[1:]) if len(args) > 1 else None
+    else:
+        if len(args) > 1:
+            if args[1].isdigit() or (args[1].startswith("-") and args[1][1:].isdigit()):
+                user_id = int(args[1])
+            elif args[1].startswith("@"):
+                user_id = args[1]
+            reason = " ".join(args[2:]) if len(args) > 2 else None
+            
+    return user_id, reason
